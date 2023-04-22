@@ -153,6 +153,9 @@ def main(argv):
     Qe_torch = torch.from_numpy(Qe.astype(np.double))
     Z_torch = torch.from_numpy(Z.astype(np.double))
 
+    import warnings
+    warnings.simplefilter("ignore")
+
     optim_res = lds_python.learning.torch_lbfgs_optimize_SS_tracking_diagV0(
         y=y_torch, B=B_torch, sqrt_noise_intensity0=sqrt_noise_intensity0,
         Qe=Qe_torch, Z=Z_torch, sqrt_diag_R_0=sqrt_diag_R_torch, m0_0=m0_torch,
