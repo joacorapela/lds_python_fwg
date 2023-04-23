@@ -9,8 +9,7 @@ import numpy as np
 import pandas as pd
 
 import utils
-sys.path.append("../src")
-import inference
+import lds_python.inference
 
 def main(argv):
     parser = argparse.ArgumentParser()
