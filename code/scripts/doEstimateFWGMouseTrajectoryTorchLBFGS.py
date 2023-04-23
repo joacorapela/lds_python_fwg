@@ -40,7 +40,7 @@ def main(argv):
                         default="../../results/{:08d}_estimation.ini",
                         help="estimation results metadata filename pattern")
     parser.add_argument("--estRes_data_filename_pattern", type=str,
-                        default="../../results/{:08d}_estimation.{:s}",
+                        default="../../results/{:08d}_estimation.pickle",
                         help="estimation results data filename pattern")
     args = parser.parse_args()
 
@@ -72,27 +72,18 @@ def main(argv):
     sigma_x0 = float(estMeta["initial_params"]["sigma_x"])
     sigma_y0 = float(estMeta["initial_params"]["sigma_y"])
     sqrt_diag_V0_value = float(estMeta["initial_params"]["sqrt_diag_v0_value"])
-    em_max_iter = int(estMeta["optim_params"]["em_max_iter"])
-    tolerance_grad = float(estMeta["optim_params"]["tolerance_grad"])
-    tolerance_change = float(estMeta["optim_params"]["tolerance_change"])
-    lr = float(estMeta["optim_params"]["lr"])
+    max_iter = int(estMeta["optim_params"]["lbfgs_max_iter"])
+    tolerance_grad = float(estMeta["optim_params"]["lbfgs_tolerance_grad"])
+    tolerance_change = float(estMeta["optim_params"]["lbfgs_tolerance_change"])
+    lr = float(estMeta["optim_params"]["lbfgs_lr"])
+    n_epochs = int(estMeta["optim_params"]["lbfgs_n_epochs"])
+    tol = float(estMeta["optim_params"]["lbfgs_tol"])
 
     data = pd.read_csv(filepath_or_buffer=data_filename)
     data = data.iloc[start_position:start_position+number_positions,:]
     y = np.transpose(data[["x", "y"]].to_numpy())
     date_times = pd.to_datetime(data["time"])
     dt = (date_times.iloc[1]-date_times.iloc[0]).total_seconds()
-
-    times = np.arange(0, y.shape[1]*dt, dt)
-    not_nan_indices_y0 = set(np.where(np.logical_not(np.isnan(y[0, :])))[0])
-    not_nan_indices_y1 = set(np.where(np.logical_not(np.isnan(y[1, :])))[0])
-    not_nan_indices = np.array(sorted(not_nan_indices_y0.union(not_nan_indices_y1)))
-    y_no_nan = y[:, not_nan_indices]
-    t_no_nan = times[not_nan_indices]
-    y_interpolated = np.empty_like(y)
-    tck, u = scipy.interpolate.splprep([y_no_nan[0, :], y_no_nan[1, :]], s=0, u=t_no_nan)
-    y_interpolated[0, :], y_interpolated[1, :] = scipy.interpolate.splev(times, tck)
-    y = y_interpolated
 
     if math.isnan(pos_x0):
         pos_x0 = y[0, 0]
@@ -119,7 +110,6 @@ def main(argv):
                    [0, 0, 0,                    dt**4/8, dt**3/3,  dt**2/2],
                    [0, 0, 0,                    dt**3/6, dt**2/2,  dt]],
                   dtype=np.double)
-    Qe = Qe + 1e-3*np.eye(6)
     m0 = np.array([pos_x0, vel_x0, ace_x0, pos_y0, vel_y0, ace_y0],
                   dtype=np.double)
 
@@ -153,15 +143,14 @@ def main(argv):
     Qe_torch = torch.from_numpy(Qe.astype(np.double))
     Z_torch = torch.from_numpy(Z.astype(np.double))
 
-    import warnings
-    warnings.simplefilter("ignore")
-
     optim_res = lds_python.learning.torch_lbfgs_optimize_SS_tracking_diagV0(
         y=y_torch, B=B_torch, sqrt_noise_intensity0=sqrt_noise_intensity0,
         Qe=Qe_torch, Z=Z_torch, sqrt_diag_R_0=sqrt_diag_R_torch, m0_0=m0_torch,
-        sqrt_diag_V0_0=sqrt_diag_V0_torch, max_iter=em_max_iter, lr=lr,
+        sqrt_diag_V0_0=sqrt_diag_V0_torch, max_iter=max_iter, lr=lr,
         vars_to_estimate=vars_to_estimate, tolerance_grad=tolerance_grad,
-        tolerance_change=tolerance_change)
+        tolerance_change=tolerance_change, n_epochs=n_epochs, tol=tol)
+
+    print(optim_res["termination_info"])
 
     # save results
     est_prefix_used = True
