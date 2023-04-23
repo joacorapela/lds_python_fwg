@@ -72,8 +72,7 @@ def main(argv):
     sigma_y0 = float(estMeta["initial_params"]["sigma_y"])
     sqrt_diag_V0_value = float(estMeta["initial_params"]["sqrt_diag_v0_value"])
     em_max_iter = int(estMeta["optim_params"]["em_max_iter"])
-    lr = float(estMeta["optim_params"]["lr"])
-    Qe_reg_param = float(estMeta["optim_params"]["Qe_reg_param"])
+    Qe_reg_param = float(estMeta["optim_params"]["em_Qe_reg_param"])
 
     data = pd.read_csv(filepath_or_buffer=data_filename)
     data = data.iloc[start_position:start_position+number_positions,:]
@@ -154,6 +153,8 @@ def main(argv):
         Qe=Qe, Z=Z, R_0=R_0, m0_0=m0_0, V0_0=V0_0,
         vars_to_estimate=vars_to_estimate,
         max_iter=em_max_iter)
+
+    print(optim_res["termination_info"])
 
     # save results
     est_prefix_used = True
