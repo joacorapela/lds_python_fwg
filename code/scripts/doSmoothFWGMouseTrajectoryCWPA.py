@@ -8,40 +8,59 @@ import configparser
 import numpy as np
 import pandas as pd
 
-import lds_python.inference
+import lds.tracking.utils
+import lds.inference
 
 
 def main(argv):
     parser = argparse.ArgumentParser()
-    parser.add_argument("filtering_params_filename", type=str,
-                        default="", help="filtering parameters filename")
-    parser.add_argument("--start_position", type=int, default=0,
-                        help="start position to smooth")
-    parser.add_argument("--number_positions", type=int, default=10000,
-                        help="number of positions to smooth")
+    parser.add_argument("--start_offset_secs", type=int, default=0,
+                        help="start offset in seconds")
+    parser.add_argument("--duration_secs", type=int, default=-1,
+                        help="duration in seconds")
+    parser.add_argument("--filtering_params_filename", type=str,
+                        default="../../metadata/00000011_smoothing.ini",
+                        help="filtering parameters filename")
     parser.add_argument("--filtering_params_section", type=str,
                         default="params",
                         help=("section of ini file containing the filtering "
                               "params"))
     parser.add_argument(
         "--data_filename", type=str,
-        default="../../data/positions_session003_start0.00_end15548.27.csv",
+        default="~/gatsby-swc/fwg/repos/aeon_repo/results/interpolated_NaNs_positions_2022-08-15T13:11:23.791259766_0_10743.csv",
         help="inputs positions filename")
     parser.add_argument("--results_filename_pattern", type=str,
                         default="../../results/{:08d}_smoothed.{:s}")
     args = parser.parse_args()
 
-    start_position = args.start_position
-    number_positions = args.number_positions
+    start_offset_secs = args.start_offset_secs
+    duration_secs = args.duration_secs
     filtering_params_filename = args.filtering_params_filename
     filtering_params_section = args.filtering_params_section
     data_filename = args.data_filename
     results_filename_pattern = args.results_filename_pattern
 
-    data = pd.read_csv(filepath_or_buffer=data_filename)
+    data = pd.read_csv(filepath_or_buffer=data_filename, header=None)
+    ts = data[1]
+    dt = (pd.to_datetime(ts.iloc[1])-pd.to_datetime(ts.iloc[0])).total_seconds()
+    start_position = int(start_offset_secs / dt)
+    if duration_secs < 0:
+        number_positions = data.shape[0] - start_position
+    else:
+        number_positions = int(duration_secs / dt)
     data = data.iloc[
-        start_position:start_position+number_positions, :]
-    y = np.transpose(data[["x", "y"]].to_numpy())
+        start_position:(start_position+number_positions), :]
+    timestamps = data[1].to_numpy()
+    x = data[2].to_numpy()
+    y = data[3].to_numpy()
+    pos = np.vstack((x, y))
+
+    # make sure that the first data point is not NaN
+    first_nan_index = np.where(np.logical_and(
+        np.logical_not(np.isnan(x)), np.logical_not(np.isnan(y))))[0][0]
+    timestamps = timestamps[first_nan_index:]
+    pos = pos[:, first_nan_index:]
+    #
 
     smoothing_params = configparser.ConfigParser()
     smoothing_params.read(filtering_params_filename)
@@ -58,49 +77,29 @@ def main(argv):
                                ["sqrt_diag_V0_value"])
 
     if math.isnan(pos_x0):
-        pos_x0 = y[0, 0]
+        pos_x0 = pos[0, 0]
     if math.isnan(pos_y0):
-        pos_y0 = y[1, 0]
+        pos_y0 = pos[1, 0]
 
     m0 = np.array([pos_x0, vel_x0, acc_x0, pos_y0, vel_y0, acc_y0],
                   dtype=np.double)
     V0 = np.diag(np.ones(len(m0))*sqrt_diag_V0_value**2)
     R = np.diag([sigma_x**2, sigma_y**2])
 
-    date_times = pd.to_datetime(data["time"])
-    dt = (date_times.iloc[1]-date_times.iloc[0]).total_seconds()
-    # Taken from the book
-    # barShalomEtAl01-estimationWithApplicationToTrackingAndNavigation.pdf
-    # section 6.2.3
-    # Eq. 6.2.3-7
-    B = np.array([[1, dt, .5*dt**2, 0, 0, 0],
-                  [0, 1,  dt,       0, 0, 0],
-                  [0, 0,  1,        0, 0, 0],
-                  [0, 0,  0,        1, dt, .5*dt**2],
-                  [0, 0,  0,        0, 1,  dt],
-                  [0, 0,  0,        0, 0,  1]], dtype=np.double)
-    Z = np.array([[1, 0, 0, 0, 0, 0],
-                  [0, 0, 0, 1, 0, 0]], dtype=np.double)
-    # Eq. 6.2.3-8
-    Qe = np.array([[dt**5/20, dt**4/8, dt**3/6, 0, 0, 0],
-                   [dt**4/8, dt**3/3,  dt**2/2, 0, 0, 0],
-                   [dt**3/6, dt**2/2,  dt,      0, 0, 0],
-                   [0, 0, 0,                    dt**5/20, dt**4/8, dt**3/6],
-                   [0, 0, 0,                    dt**4/8, dt**3/3,  dt**2/2],
-                   [0, 0, 0,                    dt**3/6, dt**2/2,  dt]],
-                  dtype=np.double)
-    R = np.diag([sigma_x**2, sigma_y**2])
-    m0 = np.array([y[0, 0], 0, 0, y[1, 0], 0, 0], dtype=np.double)
+    B, Q, Z, R, Qt = lds.tracking.utils.getLDSmatricesForTracking(dt=dt,
+                                                                  sigma_a=sigma_a,
+                                                                  sigma_x=sigma_x,
+                                                                  sigma_y=sigma_y)
+    m0 = np.array([pos[0, 0], 0, 0, pos[1, 0], 0, 0], dtype=np.double)
     V0 = np.diag(np.ones(len(m0))*sqrt_diag_V0_value**2)
-    q
-    filter_res = lds_python.inference.filterLDS_SS_withMissingValues_np(
-        y=y, B=B, Q=Q, m0=m0, V0=V0, Z=Z, R=R)
-    smooth_res = lds_python.inference.smoothLDS_SS(
+    filter_res = lds.inference.filterLDS_SS_withMissingValues_np(
+        y=pos, B=B, Q=Q, m0=m0, V0=V0, Z=Z, R=R)
+    smooth_res = lds.inference.smoothLDS_SS(
         B=B, xnn=filter_res["xnn"], Vnn=filter_res["Vnn"],
         xnn1=filter_res["xnn1"], Vnn1=filter_res["Vnn1"],
         m0=m0, V0=V0)
-    results = {"time": data["time"],
-               "measurements": y,
+    results = {"timestamps": timestamps,
+               "measurements": pos,
                "filter_res": filter_res,
                "smooth_res": smooth_res}
 
