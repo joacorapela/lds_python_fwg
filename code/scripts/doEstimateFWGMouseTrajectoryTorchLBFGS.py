@@ -16,7 +16,7 @@ import lds.learning
 def main(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument("--estMeta_number", help="estimation metadata number",
-                        type=int, default=27)
+                        type=int, default=29)
     parser.add_argument("--skip_estimation_sigma_a",
                         help=("use this option to skip the estimation of the "
                               "sqrt noise inensity"), action="store_true")
