@@ -19,7 +19,7 @@ def main(argv):
     parser.add_argument("--duration_secs", type=int, default=-1,
                         help="duration in seconds")
     parser.add_argument("--filtering_params_filename", type=str,
-                        default="../../metadata/00000011_smoothing.ini",
+                        default="../../metadata/00000013_smoothing.ini",
                         help="filtering parameters filename")
     parser.add_argument("--filtering_params_section", type=str,
                         default="params",
@@ -27,10 +27,11 @@ def main(argv):
                               "params"))
     parser.add_argument(
         "--data_filename", type=str,
-        default="~/gatsby-swc/fwg/repos/aeon_repo/results/interpolated_NaNs_positions_2022-08-15T13:11:23.791259766_0_10743.csv",
+        default="/nfs/gatsbystor/rapela/fwg/positions_noOutliers_AEON3_2024-02-05T15-00-00_2024-02-08T14-00-00.csv",
+        # default="~/gatsby-swc/fwg/repos/aeon_repo/results/interpolated_NaNs_positions_2022-08-15T13:11:23.791259766_0_10743.csv",
         help="inputs positions filename")
     parser.add_argument("--results_filename_pattern", type=str,
-                        default="../../results/{:08d}_smoothed.{:s}")
+                        default="/nfs/gatsbystor/rapela/fwg/{:08d}_smoothed.{:s}")
     args = parser.parse_args()
 
     start_offset_secs = args.start_offset_secs
@@ -40,9 +41,10 @@ def main(argv):
     data_filename = args.data_filename
     results_filename_pattern = args.results_filename_pattern
 
-    data = pd.read_csv(filepath_or_buffer=data_filename, header=None)
-    ts = data[1]
-    dt = (pd.to_datetime(ts.iloc[1])-pd.to_datetime(ts.iloc[0])).total_seconds()
+    data = pd.read_csv(data_filename, index_col=0)
+    data.index = pd.to_datetime(data.index)
+    ts = data.index
+    dt = (pd.to_datetime(ts[1])-pd.to_datetime(ts[0])).total_seconds()
     start_position = int(start_offset_secs / dt)
     if duration_secs < 0:
         number_positions = data.shape[0] - start_position
@@ -50,9 +52,9 @@ def main(argv):
         number_positions = int(duration_secs / dt)
     data = data.iloc[
         start_position:(start_position+number_positions), :]
-    timestamps = data[1].to_numpy()
-    x = data[2].to_numpy()
-    y = data[3].to_numpy()
+    timestamps = data.index.to_numpy()
+    x = data["spine2_x"].to_numpy()
+    y = data["spine2_y"].to_numpy()
     pos = np.vstack((x, y))
 
     # make sure that the first data point is not NaN
@@ -73,8 +75,10 @@ def main(argv):
     sigma_a = float(smoothing_params[filtering_params_section]["sigma_a"])
     sigma_x = float(smoothing_params[filtering_params_section]["sigma_x"])
     sigma_y = float(smoothing_params[filtering_params_section]["sigma_y"])
-    sqrt_diag_V0_value = float(smoothing_params[filtering_params_section]
-                               ["sqrt_diag_V0_value"])
+    diag_V0 = np.array(
+        [float(sqrt_diag_v0_value_str)
+         for sqrt_diag_v0_value_str in smoothing_params["params"]["diag_V0"][1:-1].split(",")]
+    )
 
     if math.isnan(pos_x0):
         pos_x0 = pos[0, 0]
@@ -83,15 +87,15 @@ def main(argv):
 
     m0 = np.array([pos_x0, vel_x0, acc_x0, pos_y0, vel_y0, acc_y0],
                   dtype=np.double)
-    V0 = np.diag(np.ones(len(m0))*sqrt_diag_V0_value**2)
+    V0 = np.diag(diag_V0)
     R = np.diag([sigma_x**2, sigma_y**2])
 
     B, Q, Z, R, Qt = lds.tracking.utils.getLDSmatricesForTracking(dt=dt,
                                                                   sigma_a=sigma_a,
                                                                   sigma_x=sigma_x,
                                                                   sigma_y=sigma_y)
-    m0 = np.array([pos[0, 0], 0, 0, pos[1, 0], 0, 0], dtype=np.double)
-    V0 = np.diag(np.ones(len(m0))*sqrt_diag_V0_value**2)
+    m0 = np.array([pos[0, 0], vel_x0, acc_x0, pos[1, 0], vel_y0, acc_y0], dtype=np.double)
+    V0 = np.diag(diag_V0)
     filter_res = lds.inference.filterLDS_SS_withMissingValues_np(
         y=pos, B=B, Q=Q, m0=m0, V0=V0, Z=Z, R=R)
     smooth_res = lds.inference.smoothLDS_SS(
