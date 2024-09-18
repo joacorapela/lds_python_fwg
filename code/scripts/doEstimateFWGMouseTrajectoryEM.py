@@ -32,7 +32,7 @@ def main(argv):
                         default="../../metadata/{:08d}_estimation.ini",
                         help="estimation initialization metadata filename pattern")
     parser.add_argument("--data_filename", type=str,
-                        default="~/gatsby-swc/fwg/repos/aeon_repo/results/interpolated_NaNs_positions_2022-08-15T13:11:23.791259766_0_10743.csv",
+                        default="~/gatsby-swc/fwg/repos/aeon_repo/results/positions_BAA-1104047_2024-02-05 15:00:00.000000_2024-02-05 16:00:00.000000_2024-02-05 17:00:00.000000.csv",
                         help="inputs positions filename")
     parser.add_argument("--estRes_metadata_filename_pattern", type=str,
                         default="../../results/{:08d}_estimation.ini",
@@ -72,7 +72,8 @@ def main(argv):
     em_max_iter = int(estMeta["optim_params"]["em_max_iter"])
     Qe_reg_param = float(estMeta["optim_params"]["em_Qe_reg_param"])
 
-    data = pd.read_csv(data_filename, header=None)
+    # data = pd.read_csv(data_filename, header=False)
+    data = pd.read_csv(data_filename, index_col=0)
     ts = data[1]
     dt = (pd.to_datetime(ts.iloc[1])-pd.to_datetime(ts.iloc[0])).total_seconds()
     start_position = int(start_offset_secs / dt)
@@ -106,7 +107,6 @@ def main(argv):
     fig.show()
     #
 
-    breakpoint()
     # interpolate nan
     times = (timestamps - timestamps[0]).total_seconds().to_numpy()
     not_nan_indices_x = set(np.where(np.logical_not(np.isnan(pos[0, :])))[0])
